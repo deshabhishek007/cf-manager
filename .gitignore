@@ -1,0 +1,16 @@
+# Configuration file with sensitive API token
+config.php
+
+# Claude Code session files
+.claude/
+
+# Text editor temporary files
+*~
+*.swp
+*.swo
+.*.swp
+.*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
