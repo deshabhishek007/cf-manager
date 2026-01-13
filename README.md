@@ -96,23 +96,66 @@ define('CF_API_TOKEN', 'your_actual_cloudflare_api_token_here');
 - Keep your token secure
 - API endpoint is: `https://api.cloudflare.com/client/v4`
 
-#### 5. Set Up CLI Alias (Optional but Recommended)
+#### 5. Set Up CLI Command with Tab Completion (Recommended)
 
-**For macOS/Linux with zsh:**
-```bash
-echo "alias cf='php ~/sites/cf-manager/cli.php'" >> ~/.zshrc
-source ~/.zshrc
-```
+**For Oh My Zsh users (macOS/Linux default):**
 
-**For macOS/Linux with bash:**
+The easiest way is to use the included Oh My Zsh plugin:
+
+1. Add `cf-manager` to your plugins in `~/.zshrc`:
+   ```bash
+   # Find this line in ~/.zshrc:
+   plugins=(git ...)
+
+   # Add cf-manager to the list:
+   plugins=(git ... cf-manager)
+   ```
+
+2. Copy the plugin to Oh My Zsh custom plugins:
+   ```bash
+   mkdir -p ~/.oh-my-zsh/custom/plugins/cf-manager
+   cp ~/.oh-my-zsh/custom/plugins/cf-manager/cf-manager.plugin.zsh \
+      ~/sites/cf-manager/cf-completion.sh
+   ```
+
+   Or create a symlink:
+   ```bash
+   mkdir -p ~/.oh-my-zsh/custom/plugins/cf-manager
+   ln -s ~/sites/cf-manager/cf-completion.sh \
+      ~/.oh-my-zsh/custom/plugins/cf-manager/cf-manager.plugin.zsh
+   ```
+
+3. Reload your shell:
+   ```bash
+   exec zsh
+   ```
+
+**For bash or non-Oh My Zsh users:**
 ```bash
-echo "alias cf='php ~/sites/cf-manager/cli.php'" >> ~/.bashrc
+echo "source ~/sites/cf-manager/cf-completion.sh" >> ~/.bashrc
 source ~/.bashrc
 ```
 
-**Verify alias works:**
+**Tab Completion Features:**
+After setup, you can use Tab to autocomplete:
+- `cf <Tab>` - Shows all commands (list, info) and domain names
+- `cf info exam<Tab>` - Completes to `cf info example.com`
+- `cf site<Tab>` - Shows domains starting with "site"
+- Domain list is cached for 5 minutes for faster completion
+
+**Verify setup:**
 ```bash
 cf list
+# Try tab completion
+cf info <Tab><Tab>
+```
+
+**Troubleshooting tab completion:**
+If tab completion shows files instead of domains:
+```bash
+# Clear completion cache
+rm -f ~/.zcompdump*
+exec zsh
 ```
 
 #### 6. Test the Setup
@@ -402,6 +445,11 @@ cf-manager/
 │                          # - update: Create/update @ and www records
 │                          # - Colored terminal output
 │
+├── cf-completion.sh       # Shell tab completion script
+│                          # - Autocomplete domain names
+│                          # - Autocomplete commands (list, info)
+│                          # - Caches domains for 5 minutes
+│
 ├── debug.php              # Debug/test API connection
 │                          # - Tests cURL availability
 │                          # - Verifies API token
@@ -415,7 +463,7 @@ cf-manager/
 │                          # - Mobile-responsive
 │                          # - No external dependencies
 │
-├── .gitignore            # Excludes config.php
+├── .gitignore            # Excludes config.php, .claude, temp files
 └── README.md             # This file
 ```
 
