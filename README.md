@@ -341,6 +341,24 @@ SSL/TLS STATUS
 Status:                   Active
 ```
 
+### Sub Command (subdomains)
+
+`cf sub <subdomain> <ip>` creates or updates **one** A record for a subdomain, e.g. `gcp.nagpur.pro`:
+
+1. Finds the parent zone by trying each suffix of the name (`gcp.nagpur.pro` → `nagpur.pro`). **It never creates a zone.** If no zone in your account contains the name, it stops without changing anything.
+2. Refuses a zone apex (use `cf <domain> <ip>` for `@`/`www`).
+3. Refuses if the name already has a CNAME record (an A record can't coexist with it).
+4. Creates the A record, or updates it if it exists. If the record already matches, it does nothing.
+5. `--dry-run` shows the current and target values without changing anything.
+
+```bash
+cf sub gcp.nagpur.pro 103.174.102.137                # proxied, Auto TTL
+cf sub api.example.com 192.168.1.1 --no-proxy        # DNS only
+cf sub gcp.nagpur.pro 103.174.102.137 --dry-run      # preview only
+```
+
+> ⚠️ Don't pass a subdomain to the plain update command (`cf gcp.nagpur.pro <ip>`): when no zone matches the name it **creates a new zone** called `gcp.nagpur.pro`. Use `cf sub` for subdomains.
+
 ### Update Command
 
 The DNS update command will:
@@ -385,6 +403,7 @@ php cli.php example.com 192.168.1.1 --no-proxy --ttl=3600
 
 - `--no-proxy` - Disable Cloudflare proxy (default: enabled/proxied)
 - `--ttl=<seconds>` - Set TTL in seconds (default: 1 for Auto)
+- `--dry-run` - (`sub` only) Show what would change without changing it
 
 ### CLI Command Reference
 
@@ -395,6 +414,8 @@ php cli.php example.com 192.168.1.1 --no-proxy --ttl=3600
 | `cf <domain> <ip>` | Update @ and www records | Creates zone if needed |
 | `cf <domain> <ip> --no-proxy` | Update without proxy | Direct DNS only |
 | `cf <domain> <ip> --ttl=3600` | Update with custom TTL | TTL in seconds |
+| `cf sub <subdomain> <ip>` | Create/update one subdomain A record | Never creates a zone |
+| `cf sub <subdomain> <ip> --dry-run` | Preview a subdomain change | No changes made |
 
 **What the update command does:**
 1. Searches for domain in your Cloudflare account

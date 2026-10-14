@@ -39,8 +39,8 @@ if [ -n "$ZSH_VERSION" ]; then
 
     _cf_zsh() {
         local -a commands domains options
-        commands=('list:List all domains with NS status' 'info:Show detailed domain information')
-        options=('--no-proxy:Disable Cloudflare proxy' '--ttl=:Set TTL in seconds')
+        commands=('list:List all domains with NS status' 'info:Show detailed domain information' 'sub:Create/update one subdomain A record (never creates a zone)')
+        options=('--no-proxy:Disable Cloudflare proxy' '--ttl=:Set TTL in seconds' '--dry-run:Show changes without applying (sub)')
 
         local curcontext="$curcontext" state line
         typeset -A opt_args
@@ -107,7 +107,7 @@ else
         prev="${COMP_WORDS[COMP_CWORD-1]}"
 
         # Main commands
-        commands="list info"
+        commands="list info sub"
 
         # If we're completing the first argument
         if [ $COMP_CWORD -eq 1 ]; then
@@ -128,7 +128,7 @@ else
 
         # If we're on the third argument (after domain and IP), suggest options
         if [ $COMP_CWORD -eq 3 ]; then
-            COMPREPLY=( $(compgen -W "--no-proxy --ttl=" -- ${cur}) )
+            COMPREPLY=( $(compgen -W "--no-proxy --ttl= --dry-run" -- ${cur}) )
             return 0
         fi
     }

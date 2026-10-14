@@ -4,6 +4,7 @@
  * Cloudflare DNS Manager CLI
  *
  * Usage: php cli.php <domain> <ip-address> [options]
+ *        php cli.php sub <subdomain> <ip-address> [--no-proxy] [--ttl=N] [--dry-run]
  *
  * Examples:
  *   php cli.php example.com 192.168.1.1
@@ -32,7 +33,9 @@ function cfApi($endpoint, $method = 'GET', $data = null) {
 
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    if (PHP_VERSION_ID < 80000) {
+        curl_close($ch); // no-op since PHP 8.0, deprecated in 8.5
+    }
 
     $result = json_decode($response, true);
 
@@ -339,6 +342,94 @@ if ($command === 'info') {
     exit(0);
 }
 
+// Handle 'sub' command: create or update ONE subdomain A record inside an existing zone.
+// Never creates a zone (unlike `<domain> <ip>`, which creates a zone when none matches).
+if ($command === 'sub') {
+    $name = strtolower(trim($argv[2] ?? ''));
+    $ip = $argv[3] ?? null;
+    $dryRun = in_array('--dry-run', $argv);
+    $proxied = !in_array('--no-proxy', $argv);
+    $ttl = 1;
+    foreach ($argv as $arg) {
+        if (strpos($arg, '--ttl=') === 0) {
+            $ttl = (int)substr($arg, 6);
+        }
+    }
+
+    if (!$name || !$ip) {
+        output("Usage: php cli.php sub <subdomain> <ip> [--no-proxy] [--ttl=<num>] [--dry-run]", 'error');
+        output("Example: php cli.php sub gcp.nagpur.pro 103.174.102.137", 'info');
+        exit(1);
+    }
+    if (!preg_match('/^(?=.{1,253}$)([a-z0-9_]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/', $name)) {
+        output("Invalid hostname: $name", 'error');
+        exit(1);
+    }
+    if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        output("Invalid IPv4 address: $ip", 'error');
+        exit(1);
+    }
+    if ($ttl !== 1 && ($ttl < 60 || $ttl > 86400)) {
+        output("TTL must be 1 (Auto) or between 60 and 86400 seconds", 'error');
+        exit(1);
+    }
+
+    // Find the parent zone: try gcp.nagpur.pro -> nagpur.pro -> pro (longest match wins).
+    $labels = explode('.', $name);
+    $zone = null;
+    for ($i = 0; $i <= count($labels) - 2; $i++) {
+        $candidate = implode('.', array_slice($labels, $i));
+        $res = cfApi("/zones?name=" . urlencode($candidate));
+        if (!empty($res['success']) && !empty($res['result'])) {
+            foreach ($res['result'] as $z) {
+                if ($z['name'] === $candidate) { $zone = $z; break 2; }
+            }
+        }
+    }
+    if (!$zone) {
+        output("No Cloudflare zone in this account contains $name. Nothing changed (sub never creates zones).", 'error');
+        exit(1);
+    }
+    if ($zone['name'] === $name) {
+        output("$name is a zone apex. Use: php cli.php $name <ip>", 'error');
+        exit(1);
+    }
+
+    output("Zone: {$zone['name']} ({$zone['id']})", 'success');
+
+    $cname = cfApi("/zones/{$zone['id']}/dns_records?type=CNAME&name=" . urlencode($name));
+    if (!empty($cname['result'])) {
+        output("$name already has a CNAME record (→ {$cname['result'][0]['content']}). An A record can't coexist with it. Nothing changed.", 'error');
+        exit(1);
+    }
+
+    $existing = getARecords($zone['id'], $name);
+    $want = "$ip, " . ($proxied ? 'Proxied' : 'DNS only') . ", TTL " . ($ttl === 1 ? 'Auto' : $ttl);
+    if (count($existing) > 1) {
+        output(count($existing) . " A records exist for $name; only the first will be updated.", 'warning');
+    }
+    if ($existing) {
+        $r = $existing[0];
+        $have = "{$r['content']}, " . ($r['proxied'] ? 'Proxied' : 'DNS only') . ", TTL " . ($r['ttl'] == 1 ? 'Auto' : $r['ttl']);
+        if ($r['content'] === $ip && (bool)$r['proxied'] === $proxied && (int)$r['ttl'] === $ttl) {
+            output("$name already set: $have. Nothing to change.", 'success');
+            exit(0);
+        }
+        output("Current: $name → $have");
+    } else {
+        output("No A record for $name yet.");
+    }
+    output("Target:  $name → $want");
+
+    if ($dryRun) {
+        output("Dry run: no changes made.", 'warning');
+        exit(0);
+    }
+
+    $ok = updateOrCreateRecord($zone['id'], $name, $ip, $proxied, $ttl);
+    exit($ok ? 0 : 1);
+}
+
 // Parse arguments for domain update
 $domain = $argv[1] ?? null;
 $ip = $argv[2] ?? null;
@@ -349,9 +440,11 @@ if (!$domain || !$ip) {
     output("Commands:", 'info');
     output("  list                            List all domains with NS status", 'info');
     output("  info <domain>                   Show detailed domain information", 'info');
+    output("  sub <subdomain> <ip>            Create/update one subdomain A record (never creates a zone)", 'info');
     output("  <domain> <ip>                   Update domain DNS records", 'info');
     output("", 'info');
     output("Options:", 'info');
+    output("  --dry-run     (sub only) Show what would change without changing it", 'info');
     output("  --no-proxy    Disable Cloudflare proxy (default: enabled)", 'info');
     output("  --ttl=<num>   Set TTL in seconds (default: 1 for Auto)", 'info');
     output("", 'info');
@@ -361,6 +454,7 @@ if (!$domain || !$ip) {
     output("  php cli.php example.com 192.168.1.1                    # Proxied, Auto TTL", 'info');
     output("  php cli.php example.com 192.168.1.1 --no-proxy         # No proxy", 'info');
     output("  php cli.php example.com 192.168.1.1 --ttl=3600         # Proxied, 1h TTL", 'info');
+    output("  php cli.php sub gcp.nagpur.pro 103.174.102.137         # One subdomain, proxied", 'info');
     exit(1);
 }
 
